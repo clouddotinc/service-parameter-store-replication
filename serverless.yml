@@ -17,6 +17,10 @@ provider:
           # Need delete in case the source param is removed, so I can remove from target.
           - "ssm:DeleteParameter"
           - "ssm:DeleteParameters"
+
+          # Enable secrets config retrieval (not value) and replication changes.
+          - "secretsmanager:ReplicateSecretToRegions"
+          -
         Resource: "*"
 
 functions:

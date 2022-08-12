@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class Parameter:
     REPLICATED_TAG_VALUE = "parameter-store-replication-lambda"
@@ -17,10 +18,7 @@ class Parameter:
     Value: str = ""
 
     def has_replication_tags(self):
-        for tag in self.Tags:
-            if "Value" in tag and tag['Value'] == self.REPLICATED_TAG_VALUE:
-                return True
-        return False
+        return self.REPLICATED_TAG_VALUE in [tag['Value'] for tag in self.Tags]
 
     def add_replication_tags(self):
         if not self.has_replication_tags():
