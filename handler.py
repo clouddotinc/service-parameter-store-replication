@@ -99,7 +99,7 @@ def sync_all_parameters():
 
 
 def validate_configuration(event):
-    if os.getenv('SOURCE_REGION') == os.getenv('TARGET_REGION'):
+    if source_region == target_region:
         raise ValueError("Source and Target regions cannot be the same.")
 
     if "detail" not in event:
