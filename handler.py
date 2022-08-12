@@ -1,11 +1,101 @@
 import json
 import boto3
 import os
-from dataclasses import dataclass
+from Parameter import Parameter
 
-ssm_source = boto3.client('ssm', region_name=os.getenv('source_region'))
-ssm_target = boto3.client('ssm', region_name=os.getenv('target_region'))
-replicated_tag_value = "parameter-store-replication-lambda"
+sns_topic = os.getenv('SNS_TOPIC')
+sns_region = os.getenv('SNS_REGION')
+
+source_region = os.getenv('SOURCE_REGION')
+target_region = os.getenv('TARGET_REGION')
+account_id = os.getenv('ACCOUNT_ID')
+
+ssm_source = boto3.client('ssm', region_name=source_region)
+ssm_target = boto3.client('ssm', region_name=target_region)
+
+
+def notify_exception(ex, context=""):
+    message = {
+        "subject": "parameter-store-replication-lambda failure detected",
+        "account_id": account_id,
+        "context": context,
+        "error_detail": ex,
+    }
+
+    sns = boto3.client('sns', TopicArn=sns_topic, region_name=sns_region)
+    print(json.dumps(message))
+
+
+# delete is a write operation, so we hard-code **ssm_target** and avoid modification of source.
+def delete_parameter(parameter_name):
+    print(f"delete_parameter({parameter_name}) was called.")
+    try:
+        foo = 1
+        # ssm_target.delete_parameter(Name=parameter_name, WithDecryption=True)
+    except BaseException as ex:
+        notify_exception(ex, f"Failure during delete_parameter({parameter_name}).")
+
+
+# update is a write operation, so we hard-code **ssm_target** and avoid modification of source.
+def update_parameter(parameter: Parameter):
+    print(f"update_parameter({parameter.Name}) was called.")
+    try:
+        foo = 2
+        # ssm_target.put_parameter(parameter.__dict__)
+    except BaseException as ex:
+        notify_exception(ex, f"Failure during update_parameter({parameter.Name}).")
+
+
+def get_parameter(parameter_name):
+    try:
+        request = ssm_source.get_parameter(Name=parameter_name, WithDecryption=True)
+        return Parameter(**request['Parameter'])
+    except BaseException as ex:
+        notify_exception(ex, f"Failure during get_parameter({parameter_name}")
+
+
+def get_paginated_parameters(ssm_client):
+    try:
+        paginator = ssm_client.get_paginator('describe_parameters')
+        page_iterator = paginator.paginate().build_full_result()
+        return page_iterator
+    except BaseException as ex:
+        notify_exception(ex, f"Failure during describe_parameters() for region: {ssm_client.meta.region_name}")
+
+        # This is only reached if sync_all_parameters() is invoked and will break that workflow completely,
+        # so we need to force an exit.
+        exit(1)
+
+
+def get_all_parameters(ssm_client):
+    parameters = []
+
+    for page in get_paginated_parameters(ssm_client)['Parameters']:
+        try:
+            parameter = get_parameter(page['Parameter']['Name'])
+            loaded = page.update(parameter)
+            parameters.append(Parameter(**loaded))
+
+        except BaseException as ex:
+            parameter_name = "Missing Name"
+            if "Parameter" in page and "Name" in page['Parameter']:
+                parameter_name = page['Parameter']['Name']
+            notify_exception(ex, f"Failure during get_all_parameters() call for param: {parameter_name}")
+
+    return parameters
+
+
+def sync_all_parameters():
+    source_names = []
+
+    for param in get_all_parameters(ssm_source):
+        source_names.append(param.Name)
+        param.add_replication_tags()
+        update_parameter(param)
+
+    for param in get_all_parameters(ssm_target):
+        if param.Name not in source_names and param.has_replication_tags():
+            delete_parameter(param.Name)
 
 
 def validate_configuration(event):
@@ -19,142 +109,29 @@ def validate_configuration(event):
         raise ValueError("Invalidly formed event. Missing 'name' in detail object.")
 
 
-@dataclass
-class Parameter:
-    """Ensure a clean struct from differing methods."""
-    Name: str
-    DataType: str
-    Description: str
-    Type: str
-    Overwrite: bool
-    AllowedPattern: str
-    Tags: list
-    Tier: str
-    Policies: list
-    Value: str = ""
-
-    def has_replication_tags(self):
-        for tag in self.Tags:
-            if "Value" in tag and tag['Value'] == replicated_tag_value:
-                return True
-        return False
-
-    def add_replication_tags(self):
-        if not self.has_replication_tags():
-            self.Tags = self.Tags + [
-                {
-                    'Key': 'Source',
-                    'Value': replicated_tag_value
-                },
-                {
-                    'Key': 'Environment',
-                    'Value': 'disaster-recovery'
-                }
-            ]
-
-
-# delete is a write operation, so we hard-code ssm_target as the client to avoid modification of source.
-def delete_parameter(parameter_name):
-    print(f"delete_parameter({parameter_name}) was called.")
-    try:
-        foo = 1
-        # ssm_target.delete_parameter(Name=parameter_name, WithDecryption=True)
-    except BaseException as ex:
-        notify_exception(ex, f"Failure during delete_parameter({parameter_name}).")
-
-
-# update is a write operation, so we hard-code ssm_target as the client to avoid modification of source.
-def update_parameter(parameter: Parameter):
-    print(f"update_parameter({parameter.Name}) was called.")
-    try:
-        foo = 2
-        # ssm_target.put_parameter(parameter.__dict__)
-    except BaseException as ex:
-        notify_exception(ex, f"Failure during update_parameter({parameter.Name}).")
-
-
-def notify_exception(ex, context=""):
-    message = {
-        "subject": "SSM Parameter Replication Failed!",
-        "context": context,
-        "error": ex,
-
-    }
-    sns = boto3.client('sns')  # TODO create a topic in mgmt account and grant access to all our accounts.
-
-    print(message)
-    exit(1)
-
-
-def get_parameter(parameter_name):
-    try:
-        request = ssm_source.get_parameter(Name=parameter_name, WithDecryption=True)
-        return Parameter(**request['Parameter'])
-    except BaseException as ex:
-        notify_exception(ex, f"Failure during get_parameter({parameter_name}")
-
-
-def get_all_parameters(ssm_client):
-    parameters = []
-    paginator = ssm_client.get_paginator('describe_parameters')
-    page_iterator = paginator.paginate().build_full_result()
-    for page in page_iterator['Parameters']:
-        try:
-            parameter = get_parameter(page['Parameter']['Name'])
-
-            param = Parameter(**{
-                "Value": parameter.Value,
-                "Name": page['Parameter']['Name'],
-                "Description": page['Parameter']['Description'],
-                "Type": page['Parameter']['Type'],
-                "Overwrite": True,
-                "AllowedPattern": page['Parameter']['AllowedPattern'],
-                "Tags": page['Parameter']['Tags'],
-                "Tier": page['Parameter']['Tier'],
-                "Policies": page['Parameter']['Policies'],
-                "DataType": page['Parameter']['DataType']
-            })
-            parameters.append(param)
-        except BaseException as ex:
-            parameter_name = "Missing Name"
-            if "Parameter" in page and "Name" in page['Parameter']:
-                parameter_name = page['Parameter']['Name']
-
-            notify_exception(ex, f"Failure during get_all_parameters() call for param: {parameter_name}")
-
-    return parameters
-
-
-def sync_all_parameters():
-    source_parameters = get_all_parameters(ssm_source)
-    target_parameters = get_all_parameters(ssm_target)
-
-    source_names = []
-    for param in source_parameters:
-        source_names.append(param.Name)
-
-        param.add_replication_tags()
-        update_parameter(param)
-
-    for param in target_parameters:
-        if param.Name not in source_names and param.has_replication_tags():
-            delete_parameter(param.Name)
-
-def handle(event):
+def get_event_detail(event):
     validate_configuration(event)
 
-    parameter_name = event['detail']['name']
+    name = event['detail']['name']
+    operation = ""
+    if "operation" in event['detail']:
+        operation = event['detail']['operation']
 
-    if parameter_name == "all":
+    return name, operation
+
+
+def handle(event):
+    name, operation = get_event_detail(event)
+
+    if name == "all":
         sync_all_parameters()
 
-    elif "operation" in event['detail']:
-        operation = event['detail']['operation']
-        if operation in ["update", "create"]:
-            parameter = get_parameter(parameter_name)
-            update_parameter(parameter)
-        elif operation in ["delete"]:
-            delete_parameter(parameter_name)
+    elif operation in ["update", "create"]:
+        parameter = get_parameter(name)
+        update_parameter(parameter)
+
+    elif operation == "delete":
+        delete_parameter(name)
 
     body = {
         "message": "Operation completed without error."
