@@ -13,15 +13,15 @@ class Parameter:
     Name: str
     DataType: str
     Description: str
-    Value: str
     Type: str
     Overwrite: bool
     AllowedPattern: str
     Tags: list
     Tier: str
     Policies: list
+    Value: str = ""
 
-def replicate(event, context):
+def replicate(event):
     if "detail" in event and "name" in event['detail']:
         parameter_name = event['detail']['name']
 
@@ -33,8 +33,8 @@ def replicate(event, context):
 
             try:
                 if operation in ["update", "create"]:
-                    parameter_object = get_parameter(parameter_name)
-                    update_parameter(parameter_object)
+                    parameter = get_parameter(parameter_name)
+                    update_parameter(parameter)
                 elif operation in ["delete"]:
                     delete_parameter(parameter_name)
             except BaseException as ex:
@@ -59,8 +59,8 @@ def delete_parameter(parameter_name):
     ssm_target.delete_parameter(Name=parameter_name, WithDecryption=True)
 
 
-def update_parameter(parameter_object: Parameter):
-    ssm_target.put_parameter(parameter_object.__dict__)
+def update_parameter(parameter: Parameter):
+    ssm_target.put_parameter(parameter.__dict__)
 
 
 def sync_all_parameters():
@@ -68,17 +68,19 @@ def sync_all_parameters():
     # want someone to stand up resources in another region and then wonder why they keep disappearing. Individual
     # item deletes *should* be handled by the delete action above, as we see those in logs. This is all best-effort.
 
+    # For future me, consider deleting params that are missing from source if they are tagged as replicated.
+
     paginator = ssm_source.get_paginator('describe_parameters')
     page_iterator = paginator.paginate().build_full_result()
 
     for page in page_iterator['Parameters']:
+        # page gets us everything except the parameter's current value.
 
         try:
-            # We have to make this call on a per-item basis to get the current value.
-            parameter_object = get_parameter(page['Name'])
+            parameter = get_parameter(page['Name'])
 
             param = Parameter(**{
-                "Value": parameter_object['Value'],
+                "Value": parameter.Value,
                 "Name": page['Parameter']['Name'],
                 "Description": page['Parameter']['Description'],
                 "Type": page['Parameter']['Type'],
