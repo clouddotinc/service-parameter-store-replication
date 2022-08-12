@@ -61,7 +61,7 @@ Which should result in response similar to the following:
 ```json
 {
   "statusCode": 200,
-  "body": "{\"message\": \"A success message goes here!\", \"input\": {}}"
+  "body": "{\"message\": \"Operation completed without error.\", \"input\": {}}"
 }
 ```
 
@@ -78,7 +78,7 @@ Which should result in response similar to the following:
 ```
 {
     "statusCode": 200,
-    "body": "{\"message\": \"A success message goes here!\", \"input\": {}}"
+    "body": "{\"message\": \"Operation completed without error.\", \"input\": {}}"
 }
 ```
 
