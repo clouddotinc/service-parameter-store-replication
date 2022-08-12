@@ -20,11 +20,11 @@ provider:
         Resource: "*"
 
 functions:
-  replicate:
+  handle:
     environment:
       source_region: ${opt:source_region, 'us-west-2'}
       target_region: ${opt:target_region, 'us-east-2'}
-    handler: handler.replicate
+    handler: handler.handle
     events:
       - cloudwatchEvent:
           event:

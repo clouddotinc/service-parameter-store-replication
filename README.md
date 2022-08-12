@@ -11,9 +11,16 @@ authorName: 'Serverless, inc.'
 authorAvatar: 'https://avatars1.githubusercontent.com/u/13742415?s=200&v=4'
 -->
 
-# Background
+# Context
 
-This configuration is powered by Serverless Framework. 
+We want to enable Secret & Parameter replication to a secondary region for DR purposes.
+Secrets Manager supports cross-region replication including metadata, so we just need to enable it on all secrets. 
+Parameter Store doesn't support replication, so we need to manually sync secrets to the failover region. 
+
+This stack will create two jobs:
+
+- A daily cron which triggers a full sync of parameters (including removing deleted params) and enables replication on all Secrets.
+- A Cloudwatch Event listener which watches for parameter updates and replicates those to the failover region. 
 
 ## Usage
 
