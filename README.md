@@ -53,7 +53,7 @@ functions:
 After successful deployment, you can invoke the deployed function by using the following command:
 
 ```bash
-serverless invoke --function replicate
+serverless invoke --function handle
 ```
 
 Which should result in response similar to the following:
@@ -70,7 +70,7 @@ Which should result in response similar to the following:
 You can invoke your function locally by using the following command:
 
 ```bash
-serverless invoke local --function replicate
+serverless invoke local --function handle
 ```
 
 Which should result in response similar to the following:
