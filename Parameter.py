@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass
@@ -7,17 +8,24 @@ class Parameter:
 
     """Ensure a clean struct from differing methods."""
     Name: str
-    DataType: str
-    Description: str
     Type: str
-    Overwrite: bool
-    AllowedPattern: str
-    Tags: list
+    Version: int
+    LastModifiedDate: datetime
+    ARN: str
+    DataType: str
+    LastModifiedUser: str
+    Description: str
     Tier: str
-    Policies: list
+    Policies: str
+    Tags: list = None
     Value: str = ""
+    AllowedPattern: str = ""
+    Overwrite = True
 
     def has_replication_tags(self):
+        if self.Tags is None:
+            self.Tags = []
+
         return self.REPLICATED_TAG_VALUE in [tag['Value'] for tag in self.Tags]
 
     def add_replication_tags(self):

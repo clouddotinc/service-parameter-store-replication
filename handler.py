@@ -40,30 +40,68 @@ def delete_parameter(parameter_name):
     print(f"delete_parameter({parameter_name}) was called.")
     try:
         pass
-        # ssm_target_client.delete_parameter(Name=parameter_name, WithDecryption=True)
+        ssm_target_client.delete_parameter(Name=parameter_name)
     except BaseException as ex:
         notify_exception(ex, f"Failure during delete_parameter({parameter_name}).")
 
 
 # update is a write operation, so we hard-code **ssm_target_client** and avoid modification of source.
 def update_parameter(parameter: Parameter):
-    print(f"update_parameter({parameter.Name}) was called.")
     try:
-        pass
-        # ssm_target_client.put_parameter(parameter.__dict__)
+        # Pushing to the new location? Include tags, so we know it was replicated.
+        parameter.add_replication_tags()
+
+        update = {
+            "Name":           parameter.Name,
+            "Description":    parameter.Description,
+            "Value":          parameter.Value,
+            "Type":           parameter.Type,
+            "AllowedPattern": parameter.AllowedPattern,
+            "Tags":           parameter.Tags,
+            "Tier":           parameter.Tier,
+            "DataType":       parameter.DataType
+        }
+
+        if parameter.Tier.lower() != "standard":
+            update.Policies = json.dumps(parameter.Policies)
+
+        ssm_target_client.put_parameter(**update)
     except BaseException as ex:
         notify_exception(ex, f"Failure during update_parameter({parameter.Name}).")
 
 
 def get_parameter(parameter_name):
-    try:
-        request = ssm_source_client.get_parameter(Name=parameter_name, WithDecryption=True)
-        return Parameter(**request['Parameter'])
-    except BaseException as ex:
-        notify_exception(ex, f"Failure during get_parameter({parameter_name}")
+    # should fetch the parameter and run a describe on it, building a fully hydrated parameter object.
+
+    get = ssm_source_client.get_parameter(Name=parameter_name, WithDecryption=True)
+    """
+       individual parameter - get['Parameter'] returns OBJ with:
+           Name
+           Type
+           Value
+           Version
+           LastModifiedDate
+           ARN
+           DataType
+    """
+
+    base = get['Parameter']
+
+    describe = ssm_source_client.describe_parameters(ParameterFilters=[{
+        'Key': 'Name',
+        'Option': 'Equals',
+        'Values': [parameter_name]
+    }])
+
+    if len(describe['Parameters']) > 0:
+        base.update(describe['Parameters'][0])
+
+    return Parameter(**base)
 
 
 def get_paginated_parameters(ssm_client):
+    # gets all parameters using describe, returning partial objects.
+
     try:
         paginator = ssm_client.get_paginator('describe_parameters')
         page_iterator = paginator.paginate().build_full_result()
@@ -74,6 +112,8 @@ def get_paginated_parameters(ssm_client):
 
 
 def get_all_parameters(ssm_client):
+    # gets paginated, then hydrates each.
+
     parameters = []
 
     for page in get_paginated_parameters(ssm_client)['Parameters']:
