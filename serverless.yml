@@ -29,16 +29,38 @@ provider:
 functions:
   handle:
     environment:
-      SNS_TOPIC: "" #todo - create a topic in our mgmt account and grant access to ALL our owned accounts. Put ARN here.
+      SNS_TOPIC: ""  #todo - create a topic in our mgmt account and grant access to ALL our owned accounts. Put ARN here.
       SNS_REGION: "" #todo - get region from the above topic.
       SOURCE_REGION: ${opt:source_region, 'us-east-2'}
       TARGET_REGION: ${opt:target_region, 'us-east-1'}
       ACCOUNT_ID: ${AWS::AccountId}
     handler: handler.handle
-    events:
-      - cloudwatchEvent:
-          event:
-            source:
-              - "aws.ssm"
-            detail-type:
-              - "Parameter Store Change"
+#    events:
+#      # 9-10 AM Eastern Every Day (DST variance) - sync everything to catch missed items.
+#      - schedule:
+#          rate:  cron(0 14 * * ? *)
+#          input:
+#            detail:
+#              name: "all"
+#              operation: "sync"
+#
+#      # The following triggers are subject to a variable delay due to reliance on CloudTrail logs:
+#
+#      # Any change to a parameter triggers immediate sync.
+#      - cloudwatchEvent:
+#          event:
+#            source:
+#              - "aws.ssm"
+#            detail-type:
+#              - "Parameter Store Change"
+#
+#      # A newly created Secret gets replication config.
+#      - cloudwatchEvent:
+#          event:
+#            source:
+#              - "aws.secretsmanager"
+#            detail-type:
+#              - "AWS API Call via CloudTrail"
+#            detail:
+#              eventName:
+#                - CreateSecret
