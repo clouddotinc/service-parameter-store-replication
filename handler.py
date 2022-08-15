@@ -4,7 +4,7 @@ import os
 from Parameter import Parameter
 from Secret import Secret
 
-sns_topic = os.getenv('SNS_TOPIC')
+sns_topic_arn = os.getenv('SNS_TOPIC')
 sns_region = os.getenv('SNS_REGION')
 
 source_region = os.getenv('SOURCE_REGION')
@@ -18,14 +18,20 @@ secrets_client = boto3.client('secretsmanager', region_name=source_region)
 
 
 def notify_exception(ex, context=""):
+    subject = "parameter-store-replication-lambda failure detected"
     message = {
-        "subject": "parameter-store-replication-lambda failure detected",
         "account_id": account_id,
         "context": context,
-        "error_detail": ex,
+        "error_detail": ex.__str__(),
     }
 
-    sns = boto3.client('sns', TopicArn=sns_topic, region_name=sns_region)
+    # sns = boto3.client('sns', region_name=sns_region)
+    # topic = sns.Topic()
+    # topic.publish(
+    #     TargetArn=sns_topic_arn,
+    #     Message=message,
+    #     Subject=subject,
+    # )
     print(json.dumps(message))
 
 
@@ -33,7 +39,7 @@ def notify_exception(ex, context=""):
 def delete_parameter(parameter_name):
     print(f"delete_parameter({parameter_name}) was called.")
     try:
-        foo = 1  # TODO uncomment when ready.
+        pass
         # ssm_target_client.delete_parameter(Name=parameter_name, WithDecryption=True)
     except BaseException as ex:
         notify_exception(ex, f"Failure during delete_parameter({parameter_name}).")
@@ -43,7 +49,7 @@ def delete_parameter(parameter_name):
 def update_parameter(parameter: Parameter):
     print(f"update_parameter({parameter.Name}) was called.")
     try:
-        foo = 2  # TODO uncomment when ready.
+        pass
         # ssm_target_client.put_parameter(parameter.__dict__)
     except BaseException as ex:
         notify_exception(ex, f"Failure during update_parameter({parameter.Name}).")
@@ -64,10 +70,7 @@ def get_paginated_parameters(ssm_client):
         return page_iterator
     except BaseException as ex:
         notify_exception(ex, f"Failure during describe_parameters() for region: {ssm_client.meta.region_name}")
-
-        # This is only reached if sync_all_parameters() is invoked and will break that workflow completely,
-        # so we need to force an exit.
-        exit(1)
+        raise
 
 
 def get_all_parameters(ssm_client):
@@ -91,18 +94,23 @@ def get_all_parameters(ssm_client):
 def get_paginated_secrets():
     try:
         paginator = secrets_client.get_paginator('list_secrets')
-        page_iterator = paginator.paginate().build_full_result()
+        page_iterator = paginator.paginate()
         return page_iterator
     except BaseException as ex:
         notify_exception(ex, f"Failure during list_secrets() for region: {secrets_client.meta.region_name}")
+        raise
 
-        # This is only reached if sync_all_parameters() is invoked and will break that workflow completely,
-        # so we need to force an exit.
-        exit(1)
+
+def get_all_secrets():
+    secrets = []
+    for secret in get_paginated_secrets():
+        secrets += secret['SecretList']
+
+    return secrets
 
 
 def get_all_secret_ids():
-    return [secret['Id'] for secret in get_paginated_secrets()['Secrets']]
+    return [secret['Id'] for secret in get_all_secrets()]
 
 
 def replicate_all_secrets():
@@ -111,8 +119,7 @@ def replicate_all_secrets():
         secret = secrets_client.describe_secret(SecretId=secret_id)
         secret = Secret(**secret)
         if not secret.has_replication(target_region=target_region):
-            foo = 3
-            # TODO uncomment when ready to test replication.
+            pass
             # replicate_secret(secret_id)
 
 
@@ -166,7 +173,7 @@ def get_event_detail(event):
     return name, operation
 
 
-def handle(event):
+def handle(event, context):
     name, operation = get_event_detail(event)
 
     if name == "all":

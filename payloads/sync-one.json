@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "name": "/parameter-store-replication/integration-test/sync-me",
+    "operation": "delete"
+  }
+}

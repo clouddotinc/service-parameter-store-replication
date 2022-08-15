@@ -4,32 +4,35 @@ frameworkVersion: '3'
 
 provider:
   name: aws
+  region: us-east-2
   runtime: python3.9
   iam:
     role:
-      - Effect: "Allow"
-        Action:
-          # Most sync actions will happen here.
+      statements:
+        - Effect: 'Allow'
+          Resource: '*'
+          Action:
+          # Parameter Store - Read & Sync Actions
+
           - "ssm:GetParameters"
           - "ssm:GetParameter"
           - "ssm:PutParameter"
-
-          # Need delete in case the source param is removed, so I can remove from target.
           - "ssm:DeleteParameter"
           - "ssm:DeleteParameters"
 
-          # Enable secrets config retrieval (not value) and replication changes.
+          # Secrets Manager - Check & Enable Replication Configuration
+
           - "secretsmanager:ReplicateSecretToRegions"
-          -
-        Resource: "*"
+          - "secretsmanager:DescribeSecret"
+          - "secretsmanager:ListSecrets"
 
 functions:
   handle:
     environment:
       SNS_TOPIC: "" #todo - create a topic in our mgmt account and grant access to ALL our owned accounts. Put ARN here.
       SNS_REGION: "" #todo - get region from the above topic.
-      SOURCE_REGION: ${opt:source_region, 'us-west-2'}
-      TARGET_REGION: ${opt:target_region, 'us-east-2'}
+      SOURCE_REGION: ${opt:source_region, 'us-east-2'}
+      TARGET_REGION: ${opt:target_region, 'us-east-1'}
       ACCOUNT_ID: ${AWS::AccountId}
     handler: handler.handle
     events:
