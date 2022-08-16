@@ -37,10 +37,11 @@ def notify_exception(ex, context=""):
 
 # delete is a write operation, so we hard-code **ssm_target_client** and avoid modification of source.
 def delete_parameter(parameter_name):
-    print(f"delete_parameter({parameter_name}) was called.")
     try:
-        pass
+        ssm_target_client.get_parameter(Name=parameter_name, WithDecryption=True)
         ssm_target_client.delete_parameter(Name=parameter_name)
+    except ssm_target_client.exceptions.ParameterNotFound:
+        pass
     except BaseException as ex:
         notify_exception(ex, f"Failure during delete_parameter({parameter_name}).")
 
@@ -48,60 +49,53 @@ def delete_parameter(parameter_name):
 # update is a write operation, so we hard-code **ssm_target_client** and avoid modification of source.
 def update_parameter(parameter: Parameter):
     try:
-        # Pushing to the new location? Include tags, so we know it was replicated.
+
         parameter.add_replication_tags()
 
         update = {
-            "Name":           parameter.Name,
-            "Description":    parameter.Description,
-            "Value":          parameter.Value,
-            "Type":           parameter.Type,
+            "Name": parameter.Name,
+            "Description": parameter.Description,
+            "Value": parameter.Value,
+            "Type": parameter.Type,
             "AllowedPattern": parameter.AllowedPattern,
-            "Tags":           parameter.Tags,
-            "Tier":           parameter.Tier,
-            "DataType":       parameter.DataType
+            "Tier": parameter.Tier,
+            "DataType": parameter.DataType,
+            "Overwrite": True
         }
 
         if parameter.Tier.lower() != "standard":
             update.Policies = json.dumps(parameter.Policies)
-
         ssm_target_client.put_parameter(**update)
+        ssm_target_client.add_tags_to_resource(ResourceType='Parameter', ResourceId=parameter.Name, Tags=parameter.Tags)
+
     except BaseException as ex:
         notify_exception(ex, f"Failure during update_parameter({parameter.Name}).")
 
+def get_parameter_tags(parameter_name):
+    tags = ssm_source_client.list_tags_for_resource(ResourceType='Parameter', ResourceId=parameter_name)
+    return tags['TagList']
 
 def get_parameter(parameter_name):
-    # should fetch the parameter and run a describe on it, building a fully hydrated parameter object.
+    try:
+        get = ssm_source_client.get_parameter(Name=parameter_name, WithDecryption=True)
+        base = get['Parameter']
+        describe = ssm_source_client.describe_parameters(ParameterFilters=[{
+            'Key': 'Name',
+            'Option': 'Equals',
+            'Values': [parameter_name]
+        }])
 
-    get = ssm_source_client.get_parameter(Name=parameter_name, WithDecryption=True)
-    """
-       individual parameter - get['Parameter'] returns OBJ with:
-           Name
-           Type
-           Value
-           Version
-           LastModifiedDate
-           ARN
-           DataType
-    """
-
-    base = get['Parameter']
-
-    describe = ssm_source_client.describe_parameters(ParameterFilters=[{
-        'Key': 'Name',
-        'Option': 'Equals',
-        'Values': [parameter_name]
-    }])
-
-    if len(describe['Parameters']) > 0:
+        param = describe['Parameters'][0]
+        param['Tags'] = get_parameter_tags(parameter_name)
         base.update(describe['Parameters'][0])
 
-    return Parameter(**base)
+        return Parameter(**base)
+
+    except BaseException as ex:
+        notify_exception(ex, f"Failure during get_parameter({parameter_name}).")
 
 
 def get_paginated_parameters(ssm_client):
-    # gets all parameters using describe, returning partial objects.
-
     try:
         paginator = ssm_client.get_paginator('describe_parameters')
         page_iterator = paginator.paginate().build_full_result()
@@ -112,20 +106,15 @@ def get_paginated_parameters(ssm_client):
 
 
 def get_all_parameters(ssm_client):
-    # gets paginated, then hydrates each.
-
     parameters = []
-
     for page in get_paginated_parameters(ssm_client)['Parameters']:
         try:
-            parameter = get_parameter(page['Parameter']['Name'])
-            loaded = page.update(parameter)
-            parameters.append(Parameter(**loaded))
-
+            get_param = get_parameter(page['Name'])
+            parameters.append(get_param)
         except BaseException as ex:
             parameter_name = "Missing Name"
-            if "Parameter" in page and "Name" in page['Parameter']:
-                parameter_name = page['Parameter']['Name']
+            if "Name" in page:
+                parameter_name = page['Name']
             notify_exception(ex, f"Failure during get_all_parameters() call for param: {parameter_name}")
 
     return parameters
@@ -183,7 +172,6 @@ def sync_all_parameters():
 
     for param in get_all_parameters(ssm_source_client):
         source_names.append(param.Name)
-        param.add_replication_tags()
         update_parameter(param)
 
     for param in get_all_parameters(ssm_target_client):
