@@ -1,16 +1,3 @@
-<!--
-title: 'Parameter Store Replication'
-description: 'This stack will deploy a lambda & cloudtrail listener to watch for updated SSM Parameters and replicate to the target region.'
-layout: Doc
-framework: v3
-platform: AWS
-language: python
-priority: 2
-authorLink: 'https://github.com/serverless'
-authorName: 'Serverless, inc.'
-authorAvatar: 'https://avatars1.githubusercontent.com/u/13742415?s=200&v=4'
--->
-
 ## Context
 
 ### Why
@@ -78,6 +65,7 @@ This will invoke the lambda in your local environment, feeding it variables from
 `sls invoke --function handle --path payloads/sync-*.json` will trigger an invocation of the lambda in AWS, providing
 the `event` parameter using the chosen .json file. 
 
-### Tear-Down
+### Teardown
 
-`sls remove` will destroy the cloudformation stack and the deployment bucket.
+`sls remove` will destroy the cloudformation stack and the deployment bucket. If this project is no longer useful,
+we should also find and consider removal of the independently-created SNS topic. 
