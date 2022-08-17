@@ -11,89 +11,67 @@ authorName: 'Serverless, inc.'
 authorAvatar: 'https://avatars1.githubusercontent.com/u/13742415?s=200&v=4'
 -->
 
-# Context
+## Context
 
-We want to enable Secret & Parameter replication to a secondary region for DR purposes.
-Secrets Manager supports cross-region replication including metadata, so we just need to enable it on all secrets. 
-Parameter Store doesn't support replication, so we need to manually sync secrets to the failover region. 
+### Why
 
-This stack will create two jobs:
+We need replication of parameters and secrets to our failover regions for disaster recovery purposes.
 
-- A daily cron which triggers a full sync of parameters (including removing deleted params) and enables replication on all Secrets.
-- A Cloudwatch Event listener which watches for parameter updates and replicates those to the failover region. 
+### How - Event Based
 
-## Usage
+This service watches CloudTrail logs for parameter and secret creation events and will attempt to replicate these
+items in real time.
 
-See [Serverless Framework](https://serverless.com) for additional details & documentation.
+### How - Daily Schedule
 
-Configuration of the infrastructure is stored in serverless.yml.
-Function code is stored in *.py files, with the function root in `handler.py`.
+Once per day, the script will attempt to sync all parameters & set replication on all secrets. This is a
+safety net in case of failure during processing of an individual event.
+
+### What - Secrets Manager
+
+We enable the automatic replication feature AWS provides. This will replicate the secret to the target region, including
+all metadata and access policies, etc. It does add steps to the secret deletion process, as the replica must first be
+promoted (and/or deleted) before the source secret can be removed. AWS requires a minimum of 7 days to remove a secret. 
+
+### What - SSM Parameter Store
+
+There is no managed replication option for Parameter Store. We perform replication by creating a copy with identical
+properties and by appending `ReplicationStatus: monitored-by-parameter-store-replication-lambda` to the existing item's
+tags. If an item is removed from the source region, we'll also delete the replicated version.  
+
+## Development & Deployment
+
+See serverless.yml for the lambda infrastructure configuration and [Serverless Framework Documentation](https://www.serverless.com/framework/docs).
+
+The control loop can be found in `handler.py->handle()`. 
+
+### Installing Serverless
+
+`npm i -g serverless` will get you started. 
+
+### AWS Credentials
+
+Serverless works with AWS environment variables and/or `~/.aws/credentials`. 
+For SSO use-cases, we can lean on tools like `yawsso` to generate environment variables and credentials profiles.
+
+
+### Local Development
+
+Modify handler.py and other files as necessary. To run a test, use the following:
+
+`sls invoke local --function handle --path payloads/sync-*.json` (replace * with your desired name). 
+
+This will invoke the lambda in your local environment, feeding it variables from serverless.yml, etc. 
 
 ### Deployment
 
-In order to deploy the example, you need to run the following command:
+`sls deploy` will package and deploy the current code to AWS, creating resources as needed through CloudFormation.
 
-```
-sls deploy
-```
+### Remote Operation
 
-After running deploy, you should see output similar to:
+`sls invoke --function handle --path payloads/sync-*.json` will trigger an invocation of the lambda in AWS, providing
+the `event` parameter using the chosen .json file. 
 
-```bash
-Deploying aws-python-project to stage dev (us-east-1)
+### Tear-Down
 
-✔ Service deployed to stack aws-python-project-dev (112s)
-
-functions:
-  hello: aws-python-project-dev-hello (1.5 kB)
-```
-
-### Invocation
-
-After successful deployment, you can invoke the deployed function by using the following command:
-
-```bash
-serverless invoke --function handle
-```
-
-Which should result in response similar to the following:
-
-```json
-{
-  "statusCode": 200,
-  "body": "{\"message\": \"Operation completed without error.\", \"input\": {}}"
-}
-```
-
-### Local development
-
-You can invoke your function locally by using the following command:
-
-```bash
-serverless invoke local --function handle
-```
-
-Which should result in response similar to the following:
-
-```
-{
-    "statusCode": 200,
-    "body": "{\"message\": \"Operation completed without error.\", \"input\": {}}"
-}
-```
-
-### Bundling dependencies
-
-In case you would like to include third-party dependencies, you will need to use a plugin
-called `serverless-python-requirements`. You can set it up by running the following command:
-
-```bash
-serverless plugin install -n serverless-python-requirements
-```
-
-Running the above will automatically add `serverless-python-requirements` to `plugins` section in your `serverless.yml`
-file and add it as a `devDependency` to `package.json` file. The `package.json` file will be automatically created if it
-doesn't exist beforehand. Now you will be able to add your dependencies to `requirements.txt` file (`Pipfile`
-and `pyproject.toml` is also supported but requires additional configuration) and they will be automatically injected to
-Lambda package during build process. For more details about the plugin's configuration, please refer
-to [official documentation](https://github.com/UnitedIncome/serverless-python-requirements).
+`sls remove` will destroy the cloudformation stack and the deployment bucket.

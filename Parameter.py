@@ -4,7 +4,7 @@ from datetime import datetime
 
 @dataclass
 class Parameter:
-    REPLICATED_TAG_VALUE = "parameter-store-replication-lambda"
+    REPLICATED_TAG_VALUE = "monitored-by-parameter-store-replication-lambda"
 
     """Ensure a clean struct from differing methods."""
     Name: str
@@ -32,7 +32,7 @@ class Parameter:
         if not self.has_replication_tags():
             self.Tags = self.Tags + [
                 {
-                    'Key': 'Source',
+                    'Key': 'ReplicationStatus',
                     'Value': self.REPLICATED_TAG_VALUE
                 },
                 {

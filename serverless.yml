@@ -29,8 +29,8 @@ provider:
 functions:
   handle:
     environment:
-      SNS_TOPIC: ""  #todo - create a topic in our mgmt account and grant access to ALL our owned accounts. Put ARN here.
-      SNS_REGION: "" #todo - get region from the above topic.
+      SNS_TOPIC: "arn:aws:sns:us-east-2:022017851643:DemoNotificationTopic"
+      SNS_REGION: "us-east-2"
       SOURCE_REGION: ${opt:source_region, 'us-east-2'}
       TARGET_REGION: ${opt:target_region, 'us-east-1'}
       ACCOUNT_ID: ${AWS::AccountId}

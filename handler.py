@@ -2,7 +2,6 @@ import json
 import boto3
 import os
 from Parameter import Parameter
-from Secret import Secret
 
 sns_topic_arn = os.getenv('SNS_TOPIC')
 sns_region = os.getenv('SNS_REGION')
@@ -25,14 +24,12 @@ def notify_exception(ex, context=""):
         "error_detail": ex.__str__(),
     }
 
-    # sns = boto3.client('sns', region_name=sns_region)
-    # topic = sns.Topic()
-    # topic.publish(
-    #     TargetArn=sns_topic_arn,
-    #     Message=message,
-    #     Subject=subject,
-    # )
-    print(json.dumps(message))
+    sns = boto3.client('sns', region_name=sns_region)
+    sns.publish(
+        TargetArn=sns_topic_arn,
+        Message=json.dumps(message),
+        Subject=subject,
+    )
 
 
 # delete is a write operation, so we hard-code **ssm_target_client** and avoid modification of source.
@@ -71,9 +68,11 @@ def update_parameter(parameter: Parameter):
     except BaseException as ex:
         notify_exception(ex, f"Failure during update_parameter({parameter.Name}).")
 
+
 def get_parameter_tags(parameter_name):
     tags = ssm_source_client.list_tags_for_resource(ResourceType='Parameter', ResourceId=parameter_name)
     return tags['TagList']
+
 
 def get_parameter(parameter_name):
     try:
@@ -138,18 +137,16 @@ def get_all_secrets():
     return secrets
 
 
-def get_all_secret_ids():
-    return [secret['Id'] for secret in get_all_secrets()]
+def get_all_secret_arns():
+    return [secret for secret in get_all_secrets()]
 
 
 def replicate_all_secrets():
-    secret_ids = get_all_secret_ids()
-    for secret_id in secret_ids:
-        secret = secrets_client.describe_secret(SecretId=secret_id)
-        secret = Secret(**secret)
-        if not secret.has_replication(target_region=target_region):
-            pass
-            # replicate_secret(secret_id)
+    secrets_list = get_all_secret_arns()
+    for secret_list in secrets_list:
+        secret = secrets_client.describe_secret(SecretId=secret_list['ARN'])
+        if "ReplicationStatus" not in secret:
+            replicate_secret(secret_list['ARN'])
 
 
 def replicate_secret(secret_id):
