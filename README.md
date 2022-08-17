@@ -45,6 +45,12 @@ See serverless.yml for the lambda infrastructure configuration and [Serverless F
 
 The control loop can be found in `handler.py->handle()`. 
 
+### Requirement: SNS Topic
+
+For this stack to notify the team of replication errors, an SNS topic must be created and this lambda must have
+permission to Publish to the topic. The recommended pattern here is to create a topic in the management account
+(or another workload account which won't be deleted) and to grant Publish to any principal in the Organization. 
+
 ### Installing Serverless
 
 `npm i -g serverless` will get you started. 
